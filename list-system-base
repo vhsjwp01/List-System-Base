@@ -1,0 +1,499 @@
+#!/bin/bash
+#set -x
+
+PATH="/bin:/usr/bin:/usr/local/bin:/sbin:/usr/sbin:/usr/local/sbin"
+TERM="vt100"
+export TERM PATH
+
+SUCCESS=0
+ERROR=0
+
+err_msg=""
+exit_code=${SUCCESS}
+
+#########################
+# Functions
+#########################
+#
+
+f__plat() {
+    this_platform=$(${my_uname} -s)
+
+    case "${this_platform}" in
+
+        Linux)
+
+            case $(${my_uname} -m) in
+
+                mips)
+                    target_file="/etc/openwrt_release"
+                    this_distro_id=$(${my_awk} -F'=' '/^DISTRIB_ID=/ {print $NF}' "${target_file}" 2> /dev/null | ${my_sed} -e "s?'??g")
+                    this_description=$(${my_awk} -F'=' '/^DISTRIB_DESCRIPTION=/ {print $NF}' "${target_file}" 2> /dev/null | ${my_sed} -e "s?'??g")
+                    this_release=$(${my_awk} -F'=' '/^DISTRIB_RELEASE=/ {print $NF}' "${target_file}" 2> /dev/null | ${my_sed} -e "s?'??g")
+                    this_codename=$(${my_awk} -F'=' '/^DISTRIB_CODENAME=/ {print $NF}' "${target_file}" 2> /dev/null | ${my_sed} -e "s?'??g")
+                ;;
+
+                *)
+                    this_platform=""
+                ;;
+
+            esac
+
+        ;;
+
+        Darwin)
+            target_file="/System/Library/CoreServices/Setup Assistant.app/Contents/Resources/en.lproj/OSXSoftwareLicense.rtf"
+            this_distro_id=$(${my_sw_vers} 2> /dev/null | ${my_egrep} "^ProductName:" | ${my_awk} -F':' '{print $NF}' | ${my_strings} | ${my_sed} -e 's?^[ |\t]*??g')
+            this_description=$(${my_system_profiler} SPSoftwareDataType 2> /dev/null | ${my_egrep} "System Version:" | ${my_awk} -F':' '{print $NF}' | ${my_sed} -e 's?^[ |\t]*??g')
+            this_release=$(${my_uname} -sr 2> /dev/null)
+            this_codename=$(${my_awk} -F'FOR' '/SOFTWARE LICENSE AGREEMENT FOR/ {print $NF}' "${target_file}" 2> /dev/null | ${my_strings} | ${my_sed} -e 's?^[ |\t]*??g' -e 's?[^a-zA-Z0-9 ]??g')
+        ;;
+
+        *)
+            this_platform=""
+        ;;
+
+    esac
+
+    if [ "${this_platform}" != "" ]; then
+        echo "platform=${this_platform}"
+        echo "distro_id=${this_distro_id}"
+        echo "description=${this_description}"
+        echo "release=${this_release}"
+        echo "codename=${this_codename}"
+    fi
+
+}
+
+f__check_command() {
+    return_code=${SUCCESS}
+
+    if [ "${1}" != "" ]; then
+        this_command="${1}"
+        this_sed=$(unalias sed > /dev/null 2>&1 ; which sed 2> /dev/null)
+
+        if [ "${this_sed}" != "" ]; then
+            var=$(echo "${this_command}" | "${this_sed}" -e 's?-?_?g' -e 's?\.?_?g')
+            value=$(unalias "${this_command}" > /dev/null 2>&1 ; which "${this_command}" 2> /dev/null)
+
+            if [ "${value}" != "" ]; then
+                eval "my_${var}=\"${value}\""
+            else
+                return_code=${ERROR}
+            fi
+
+        else
+            err_msg="Could not locate the sed command on this node"
+            return_code=${ERROR}
+        fi
+
+    else
+        err_msg="No argument was passed to f__check_command"
+	return_code=${ERROR}
+    fi
+
+    return ${return_code}
+}
+
+# WHAT:  Help function - called with '--help' argument
+# NOTES: Overrides ANY other argument passed
+#
+f__help() {
+    return_code=${SUCCESS}
+
+    echo "Usage: ${my_name} [options]"
+    echo
+    echo "Options:"
+    echo "  -h, --help         show this help message and exit"
+    echo "  -v, --version      show LSB modules this system supports"
+    echo "  -i, --id           show distributor ID"
+    echo "  -d, --description  show description of this distribution"
+    echo "  -r, --release      show release number of this distribution"
+    echo "  -c, --codename     show code name of this distribution"
+    echo "  -a, --all          show all of the above information"
+    echo "  -s, --short        show requested information in short format"
+
+    return ${return_code}
+}
+
+# WHAT:  Version function - called with '--version' argument
+# NOTES: Does nothing, but becomes the argument if none are passed via command line
+#
+f__version() {
+    return_code=${SUCCESS}
+
+    echo "No LSB modules are available."
+
+    return ${return_code}
+}
+
+# WHAT:  ID function - called with '--id' argument
+# NOTES: Returns the distribution ID
+#
+f__id() {
+    return_code=${SUCCESS}
+
+    if [ "${1}" = "short" ]; then
+        echo "${my_distro_id}"
+    else
+        echo "Distributor ID: ${my_distro_id}"
+    fi
+
+    return ${return_code}
+}
+
+# WHAT:  Description function - called with '--description' argument
+# NOTES: Returns the distribution description
+#
+f__description() {
+    return_code=${SUCCESS}
+
+    if [ "${1}" = "short" ]; then
+        echo "${my_description}"
+    else
+        echo "Description:    ${my_description}"
+    fi
+
+    return ${return_code}
+}
+
+# WHAT:  Release function - called with '--release' argument
+# NOTES: Returns the distribution release
+#
+f__release() {
+    return_code=${SUCCESS}
+
+    if [ "${1}" = "short" ]; then
+        echo "${my_release}"
+    else
+        echo "Release:        ${my_release}"
+    fi
+
+    return ${return_code}
+}
+
+# WHAT:  Codename function - called with '--codename' argument
+# NOTES: Returns the distribution codename
+#
+f__codename() {
+    return_code=${SUCCESS}
+
+    if [ "${1}" = "short" ]; then
+        echo "${my_codename}"
+    else
+        echo "Codename:       ${my_codename}"
+    fi
+
+    return ${return_code}
+}
+
+# WHAT:  All function - called with '--all' argument
+# NOTES: Returns the all distribution information
+#
+f__all() {
+    return_code=${SUCCESS}
+
+    if [ "${1}" = "short" ]; then
+        f__id "${1}"
+        f__description "${1}"
+        f__release "${1}"
+        f__codename "${1}"
+    else
+        f__id
+        f__description
+        f__release
+        f__codename
+    fi
+
+    return ${return_code}
+}
+
+#########################
+# Main
+#########################
+#
+
+# WHAT: Define some commands
+# WHY:  Needed later
+#
+if [ ${exit_code} -eq ${SUCCESS} ]; then
+
+    for command in          \
+                   awk      \
+                   basename \
+                   egrep    \
+                   sed      \
+                   sort     \
+                   strings  \
+                   uname    \
+                   wc       ; do
+
+        f__check_command "${command}"
+        exit_code=${?}
+
+        if [ ${exit_code} -ne ${SUCCESS} ]; then
+        
+            if [ "${err_msg}" = "" ]; then
+                err_msg="Could not locate the \"${command}\" command on this node"
+            fi
+            
+            break
+        fi
+
+    done
+
+fi
+
+# WHAT: Define resources and settings
+# WHY:  Needed later
+#
+if [ ${exit_code} -eq ${SUCCESS} ]; then
+
+    case $(${my_uname} -s) in
+
+        Darwin)
+
+            for command in                 \
+                           sw_vers         \
+                           system_profiler ; do
+
+                f__check_command "${command}"
+                exit_code=${?}
+                
+                if [ ${exit_code} -ne ${SUCCESS} ]; then
+                
+                    if [ "${err_msg}" = "" ]; then
+                        err_msg="Could not locate the \"${command}\" command on this node"
+                    fi
+                
+                    break
+                fi
+
+            done
+
+        ;;
+
+    esac
+
+    platform_data=$(f__plat)
+
+    if [ "${platform_data}" != "" ]; then
+        my_platform=$(echo "${platform_data}" | ${my_egrep} "^platform=" | ${my_awk} -F'=' '{print $NF}')
+        my_distro_id=$(echo "${platform_data}" | ${my_egrep} "^distro_id=" | ${my_awk} -F'=' '{print $NF}')
+        my_description=$(echo "${platform_data}" | ${my_egrep} "^description=" | ${my_awk} -F'=' '{print $NF}')
+        my_release=$(echo "${platform_data}" | ${my_egrep} "^release=" | ${my_awk} -F'=' '{print $NF}')
+        my_codename=$(echo "${platform_data}" | ${my_egrep} "^codename=" | ${my_awk} -F'=' '{print $NF}')
+
+        mode=""
+        my_name=$(${my_basename} "${0}")
+        my_args=""
+        these_args="${*}"
+    else
+        err_msg="This is not a supported platform: $(${my_uname} -srm)"
+        exit_code=${ERROR}
+    fi
+
+fi
+
+# WHAT: Figure out how we were called and with what arguments
+# WHY:  Actions depend on them
+#
+if [ ${exit_code} -eq ${SUCCESS} ]; then
+
+    for this_arg in ${these_args} ; do
+        just_dashes=$(echo -ne "${this_arg}" | ${my_sed} 's?[^-]??g')
+        let dash_check=$(echo -ne "${just_dashes}" | ${my_wc} -c | ${my_awk} '{print $1}')
+    
+        # The leading dash count ${dash_check} determines whether we are processing long (2 dashes) or short (1 dash) arguments
+        case ${dash_check} in
+
+	        # if there is only 1 leading dash, we then:
+	        #     - remove the leading dash
+	        #     - pad the characters behind that dash with spaces
+	        #     - process each one of those characters and match them with valid arguments
+	        #     - turn any matching arguments into the long version and append them to ${my_args}
+	        1) 
+                these_characters=$(echo "${this_arg}" | ${my_sed} -e 's?^-??g' -e 's?\([a-z]\)?\1 ?g')
+    
+                for this_character in ${these_characters} ; do
+    
+                    case ${this_character} in
+    
+    	                s)
+    	                    mode="short"
+    	                ;;
+    
+    	                h)
+    	                    this_arg="--help"
+    
+    	                    if [ "${my_args}" = "" ]; then
+    	                        my_args="${this_arg}"
+    	                    else
+    	                        my_args="${my_args} ${this_arg}"
+    	                    fi
+    	                ;;
+    
+    	                v)
+    	                    this_arg="--version"
+    
+    	                    if [ "${my_args}" = "" ]; then
+    	                        my_args="${this_arg}"
+    	                    else
+    	                        my_args="${my_args} ${this_arg}"
+    	                    fi
+    	                ;;
+    
+    	                i)
+    	                    this_arg="--id"
+    
+    	                    if [ "${my_args}" = "" ]; then
+    	                        my_args="${this_arg}"
+    	                    else
+    	                        my_args="${my_args} ${this_arg}"
+    	                    fi
+    	                ;;
+    	                
+    	                i)
+    	                    this_arg="--id"
+    
+    	                    if [ "${my_args}" = "" ]; then
+    	                        my_args="${this_arg}"
+    	                    else
+    	                        my_args="${my_args} ${this_arg}"
+    	                    fi
+    	                ;;
+    
+    	                d)
+    	                    this_arg="--description"
+    
+    	                    if [ "${my_args}" = "" ]; then
+    	                        my_args="${this_arg}"
+    	                    else
+    	                        my_args="${my_args} ${this_arg}"
+    	                    fi
+    	                ;;
+    
+    	                r)
+    	                    this_arg="--release"
+    
+    	                    if [ "${my_args}" = "" ]; then
+    	                        my_args="${this_arg}"
+    	                    else
+    	                        my_args="${my_args} ${this_arg}"
+    	                    fi
+    	                ;;
+    
+    	                c)
+    	                    this_arg="--codename"
+    
+    	                    if [ "${my_args}" = "" ]; then
+    	                        my_args="${this_arg}"
+    	                    else
+    	                        my_args="${my_args} ${this_arg}"
+    	                    fi
+    	                ;;
+    
+    	                a)
+    	                    this_arg="--all"
+    
+    	                    if [ "${my_args}" = "" ]; then
+    	                        my_args="${this_arg}"
+    	                    else
+    	                        my_args="${my_args} ${this_arg}"
+    	                    fi
+    	                ;;
+    
+    	            esac
+    
+                done
+
+            ;;
+    
+	        # Here we process long arguments and append matching ones to ${my_args}
+            2)
+    
+    	        case ${this_arg} in
+    
+    	            --short)
+    	                mode="short"
+    	            ;;
+    
+    	            --help|--version|--id|--description|--release|--codename|--all)
+    
+    	                if [ "${my_args}" = "" ]; then
+    	        	    my_args="${this_arg}"
+    	        	else
+    	        	    my_args="${my_args} ${this_arg}"
+    	        	fi
+    	            ;;
+    
+    	        esac
+
+            ;;
+    
+        esac
+    
+    done
+    
+    # Here we make sure ${my_args} is either not blank or properly sorted for uniqueness
+    if [ "${my_args}" = "" ]; then
+        my_args="--version"
+    else
+        my_args=$(for i in ${my_args} ; do echo "${i}" ; done | ${my_sort} -u)
+    
+        # Check for --all OR --help
+        let all_check=$(echo "${my_args}" | ${my_egrep} -c "\-\-all")
+        let help_check=$(echo "${my_args}" | ${my_egrep} -c "\-\-help")
+    
+        # If we were passed --all, then that is the only argument we process
+        if [ ${all_check} -gt 0 ]; then
+            my_args="--all"
+        fi
+    
+        # If we were passed --help, then that is the only argument we process
+        if [ ${help_check} -gt 0 ]; then
+            my_args="--help"
+        fi
+    
+    fi
+
+fi
+    
+# WHAT: Execute the argument functions
+# WHY:  The reason we are here
+#
+if [ ${exit_code} -eq ${SUCCESS} ]; then
+
+    for my_arg in ${my_args} ; do
+    
+        case ${my_arg} in
+    
+            --help|--version|--id|--description|--release|--codename|--all)
+    	        command=$(echo "${my_arg}" | ${my_sed} -e 's?^--?f__?g')
+    	        eval "${command} \"${mode}\""
+                exit_code=${?}
+
+                if [ "${err_msg}" != "" ]; then
+                    err_msg="Processing of command argument \"${my_arg}\" failed"
+                fi
+
+            ;;
+    
+        esac
+    
+    done
+
+fi
+
+# WHAT: Complain if necessary and exit
+# WHY:  Success or failure, either way we are through
+#
+if [ ${exit_code} -ne ${SUCCESS} ]; then
+
+    if [ "${err_msg}" != "" ]; then
+        echo "    ERROR:  ${err_msg} ... processing halted"
+    fi
+
+fi
+
+exit ${exit_code}
