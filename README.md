@@ -11,3 +11,6 @@ On MacOS 2 symlinks are created:
 
 On OpenWRT 1 symlink is created:
  * /usr/local/bin/lsb_release
+
+To Install, type:
+ * make -B install
