@@ -11,7 +11,7 @@ install:
 	        if [ -e "/etc/openwrt_release" ]; then                                            \
 	            sed -e 's?^#/bin/bash?#/bin/ash?g' "${SOURCE}" > "${TARGET_DIR}/${SOURCE}" && \
 	            chmod 755 "${TARGET_DIR}/${SOURCE}"                                        && \
-	            ln -s "${TARGET_DIR}/${SOURCE}" "${TARGET_DIR}/lsb_release"                 ; \
+	            ln -sf "${TARGET_DIR}/${SOURCE}" "${TARGET_DIR}/lsb_release"                ; \
 	        else                                                                              \
 	            echo "There should be a Linux System Base (LSB) package for this distro."   ; \
 	            echo "There is no need for this script." ;                                    \
