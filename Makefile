@@ -3,7 +3,7 @@ TARGET_DIR	= /usr/local/bin
 PLATFORM	= $(shell uname -s)
 
 prep:
-	source ./prep
+	awk '{print $$0}' ./prep | sh
 
 install: prep
-	source ./install
+	awk '{print $$0}' ./install | sh
