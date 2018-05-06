@@ -1,0 +1,3 @@
+if [ ! -d /usr/local/bin ]; then
+    mkdir -p "${TARGET_DIR}"
+fi
