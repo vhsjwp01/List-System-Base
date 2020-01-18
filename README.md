@@ -9,7 +9,7 @@ so that it returns equivalently useful information on MacOS and OpenWRT &ast;NIX
 ### Installation
 To Install, type:
 ```
-prompt$> make -B install
+prompt$> sudo make -B install
 ```
 
 The Makefile places the script under `/usr/local/bin`
